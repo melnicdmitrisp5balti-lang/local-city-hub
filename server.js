@@ -13,8 +13,11 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 // ── Database ──────────────────────────────────────────────────────────────────
-const db = new Database(path.join(__dirname, 'data.db'));
+const DB_PATH = path.join(__dirname, 'data.db');
+const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+
+console.log('Database path:', DB_PATH);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
@@ -57,7 +60,17 @@ db.exec(`
     detail     TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime'))
   );
+  CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    INTEGER,
+    username   TEXT NOT NULL,
+    role       TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  );
 `);
+
+// Удаляем сессии старше 30 дней при старте
+db.prepare("DELETE FROM sessions WHERE created_at < datetime('now','-30 days','localtime')").run();
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 function getSetting(key) {
@@ -89,14 +102,22 @@ function addHistory(actor, action, target, detail) {
 // Roles that can create/edit topics
 const EDITOR_ROLES = ['admin', 'editor'];
 
-// ── Sessions ──────────────────────────────────────────────────────────────────
-const sessions = new Map();
+// ── Sessions (persistent in SQLite) ──────────────────────────────────────────
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { userId: user.id, username: user.username, role: user.role });
+  db.prepare('INSERT OR REPLACE INTO sessions (token,user_id,username,role) VALUES (?,?,?,?)')
+    .run(token, user.id || null, user.username, user.role);
   return token;
 }
-function getSession(token) { return token ? sessions.get(token) : null; }
+function getSession(token) {
+  if (!token) return null;
+  const row = db.prepare('SELECT * FROM sessions WHERE token=?').get(token);
+  if (!row) return null;
+  return { userId: row.user_id, username: row.username, role: row.role };
+}
+function deleteSession(token) {
+  db.prepare('DELETE FROM sessions WHERE token=?').run(token);
+}
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
@@ -129,7 +150,7 @@ app.post('/api/panel/auth', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// Guest login — creates temporary session, no DB entry
+// Guest login — temporary session saved to DB
 app.post('/api/guest', (req, res) => {
   const guestName = 'Гость_' + Math.random().toString(36).slice(2, 6).toUpperCase();
   const fakeUser = { id: null, username: guestName, role: 'guest' };
@@ -176,7 +197,7 @@ app.post('/api/login', (req, res) => {
 
 // Logout
 app.post('/api/logout', requireAuth, (req, res) => {
-  sessions.delete(req.headers['x-token']); res.json({ ok: true });
+  deleteSession(req.headers['x-token']); res.json({ ok: true });
 });
 
 // Me
@@ -230,6 +251,7 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   if (!u) return res.status(404).json({ error: 'Не найден' });
   if (u.role === 'admin') return res.status(400).json({ error: 'Нельзя удалить администратора' });
   db.prepare("DELETE FROM users WHERE id=?").run(req.params.id);
+  db.prepare("DELETE FROM sessions WHERE username=?").run(u.username);
   addHistory(req.user.username, 'delete_user', u.username, null);
   res.json({ ok: true });
 });
@@ -242,6 +264,8 @@ app.post('/api/admin/users/:id/role', requireAdmin, (req, res) => {
   const u = db.prepare("SELECT * FROM users WHERE id=?").get(req.params.id);
   if (!u) return res.status(404).json({ error: 'Не найден' });
   db.prepare("UPDATE users SET role=? WHERE id=?").run(role, req.params.id);
+  // Обновляем роль в активных сессиях
+  db.prepare("UPDATE sessions SET role=? WHERE username=?").run(role, u.username);
   addHistory(req.user.username, 'change_role', u.username, `${u.role} → ${role}`);
   res.json({ ok: true });
 });
@@ -288,7 +312,6 @@ app.put('/api/topics/:id', requireEditor, (req, res) => {
 app.delete('/api/topics/:id', requireEditor, (req, res) => {
   const t = db.prepare("SELECT * FROM topics WHERE id=?").get(req.params.id);
   if (!t) return res.status(404).json({ error: 'Не найдено' });
-  // Only admin can delete, editor can only edit
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Удалять может только администратор' });
   db.prepare("DELETE FROM topics WHERE id=?").run(req.params.id);
   db.prepare("DELETE FROM comments WHERE topic_id=?").run(req.params.id);
@@ -305,7 +328,6 @@ app.get('/api/topics/:id/comments', (req, res) => {
 });
 
 app.post('/api/topics/:id/comments', requireAuth, (req, res) => {
-  // Guests cannot comment
   if (req.user.role === 'guest') return res.status(403).json({ error: 'Гости не могут комментировать. Зарегистрируйтесь.' });
   const { content } = req.body;
   if (!content?.trim()) return res.status(400).json({ error: 'Пустой комментарий' });
@@ -330,10 +352,10 @@ app.delete('/api/comments/:id', requireAdmin, (req, res) => {
 });
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'intex.html')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 // ── Socket ────────────────────────────────────────────────────────────────────
 io.on('connection', socket => console.log('connected:', socket.id));
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT} | DB: ${DB_PATH}`));
