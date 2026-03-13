@@ -170,6 +170,28 @@ mark{background:rgba(103,232,249,.2);color:var(--cyan);border-radius:2px;padding
 .voice-dur{font-size:11px;color:var(--muted);font-family:'Syne',sans-serif;flex-shrink:0;min-width:32px}
 .chat-img-preview{max-width:100%;max-height:180px;border-radius:10px;cursor:pointer;border:1px solid var(--border)}
 .rec-timer{font-size:11px;color:var(--rose);font-family:'Syne',sans-serif;font-weight:700;letter-spacing:.04em;align-self:center}
+
+/* ── Prefix styles ─────────────────────────────────────────────────────────── */
+.pfx{display:inline-flex;align-items:center;padding:1px 7px;border-radius:5px;font-size:9px;font-weight:700;font-family:'Syne',sans-serif;letter-spacing:.06em;white-space:nowrap;line-height:1.6}
+.pfx-solid{background:var(--pfx-c1)22;color:var(--pfx-c1);border:1px solid var(--pfx-c1)66}
+.pfx-glow{background:var(--pfx-c1)18;color:var(--pfx-c1);border:1px solid var(--pfx-c1)55;animation:pfx-glow 2s ease-in-out infinite alternate}
+@keyframes pfx-glow{from{box-shadow:0 0 4px var(--pfx-c1)88,0 0 8px var(--pfx-c1)44}to{box-shadow:0 0 10px var(--pfx-c1),0 0 20px var(--pfx-c1)66,0 0 30px var(--pfx-c1)33}}
+.pfx-rgb{border:1px solid transparent;color:#fff;animation:pfx-rgb 3s linear infinite;background-clip:padding-box}
+@keyframes pfx-rgb{0%{background:rgba(255,59,59,.25);border-color:rgba(255,59,59,.6);text-shadow:0 0 8px #ff3b3b}16%{background:rgba(255,165,0,.25);border-color:rgba(255,165,0,.6);text-shadow:0 0 8px #ffa500}33%{background:rgba(255,255,0,.2);border-color:rgba(255,255,0,.5);text-shadow:0 0 8px #ffff00}50%{background:rgba(0,255,100,.2);border-color:rgba(0,255,100,.5);text-shadow:0 0 8px #00ff64}66%{background:rgba(0,180,255,.25);border-color:rgba(0,180,255,.6);text-shadow:0 0 8px #00b4ff}83%{background:rgba(180,0,255,.25);border-color:rgba(180,0,255,.6);text-shadow:0 0 8px #b400ff}100%{background:rgba(255,59,59,.25);border-color:rgba(255,59,59,.6);text-shadow:0 0 8px #ff3b3b}}
+.pfx-pulse{background:var(--pfx-c1)20;color:var(--pfx-c1);border:1px solid var(--pfx-c1)55;animation:pfx-pulse 1.4s ease-in-out infinite}
+@keyframes pfx-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.95)}}
+.pfx-neon{background:transparent;color:var(--pfx-c1);border:1.5px solid var(--pfx-c1);text-shadow:0 0 6px var(--pfx-c1),0 0 12px var(--pfx-c1);box-shadow:0 0 6px var(--pfx-c1)55,inset 0 0 6px var(--pfx-c1)22;animation:pfx-neon 2.5s ease-in-out infinite alternate}
+@keyframes pfx-neon{from{box-shadow:0 0 4px var(--pfx-c1)55,inset 0 0 4px var(--pfx-c1)22}to{box-shadow:0 0 12px var(--pfx-c1),0 0 24px var(--pfx-c1)88,inset 0 0 8px var(--pfx-c1)44}}
+.pfx-fire{color:#fff;border:1px solid rgba(255,120,0,.6);animation:pfx-fire 1.8s ease-in-out infinite}
+@keyframes pfx-fire{0%{background:rgba(255,60,0,.3);box-shadow:0 0 6px #ff3c00,0 -2px 8px #ff8c00;text-shadow:0 0 6px #ffcc00}33%{background:rgba(255,120,0,.35);box-shadow:0 0 10px #ff7800,0 -3px 12px #ff4400;text-shadow:0 0 8px #ff8800}66%{background:rgba(255,80,0,.3);box-shadow:0 0 8px #ff5000,0 -2px 10px #ffaa00;text-shadow:0 0 6px #ffdd00}100%{background:rgba(255,60,0,.3);box-shadow:0 0 6px #ff3c00,0 -2px 8px #ff8c00;text-shadow:0 0 6px #ffcc00}}
+.pfx-gradient{border:1px solid transparent;animation:pfx-grad-border 4s linear infinite}
+@keyframes pfx-grad-border{0%,100%{border-color:var(--pfx-c1)88}50%{border-color:var(--pfx-c2,var(--pfx-c1))88}}
+
+/* Prefix editor modal */
+.pfx-modal{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(10px);z-index:90;display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .2s}
+.pfx-modal-box{background:rgba(8,11,18,.99);border:1px solid var(--border2);border-radius:20px;padding:26px;width:100%;max-width:440px;box-shadow:0 24px 80px rgba(0,0,0,.8)}
+.pfx-style-btn{padding:8px 14px;border-radius:9px;border:1px solid var(--border);background:rgba(255,255,255,.03);cursor:pointer;transition:.2s;text-align:center}
+.pfx-style-btn:hover,.pfx-style-btn.active{border-color:rgba(103,232,249,.4);background:rgba(103,232,249,.07)}
 </style>
 </head>
 <body>
@@ -490,6 +512,7 @@ let createPanelOpen = true;
 let guestsAllowed = true;
 let prefixMap = {};
 let prefixColorMap = {};
+let prefixStyleMap = {};
 
 const EDITOR_ROLES = ['admin', 'editor'];
 
@@ -522,6 +545,7 @@ try {
   socket.on('user_prefix_updated', d => {
     prefixMap[d.username] = d.prefix || '';
     prefixColorMap[d.username] = d.color || '';
+    prefixStyleMap[d.username] = d.style || 'solid';
     if (currentUser && d.username === currentUser.username) {
       currentUser.prefix = d.prefix;
       localStorage.setItem('user', JSON.stringify(currentUser));
@@ -671,7 +695,7 @@ function renderTopics() {
         <span class="syne" style="font-size:11px;font-weight:700;color:var(--cyan);opacity:.5;width:22px;flex-shrink:0">${String(idx+1).padStart(2,'0')}</span>
         <span class="syne" style="flex:1;font-size:14px;font-weight:700;color:var(--text);line-height:1.3;text-align:left">${hlText(t.title,q)}</span>
         <span style="display:flex;align-items:center;gap:5px;flex-shrink:0">
-          ${(()=>{const p=prefixMap[t.author];const pc=prefixColorMap[t.author];if(p){const col=pc||'var(--violet)';return `<span style="font-size:9px;padding:1px 6px;border-radius:4px;font-family:'Syne',sans-serif;font-weight:700;background:${col}22;color:${col};border:1px solid ${col}66">${esc(p)}</span>`;}return '';})()}
+          ${(()=>{const p=prefixMap[t.author];const pc=prefixColorMap[t.author];const ps=prefixStyleMap[t.author];return p?renderPfxBadge(p,pc,ps):'';})()}
           <span style="font-size:11px;color:var(--cyan);font-family:'Syne',sans-serif;font-weight:700">${esc(t.author)}</span>
           <span style="font-size:10px;color:var(--muted);white-space:nowrap">${t.created_at}</span>
         </span>
@@ -989,11 +1013,10 @@ async function loadUsers(){
             <span style="font-size:11px;color:var(--muted);min-width:36px">Роль:</span>
             <select class="fsel" style="font-size:11px;padding:4px 8px" onchange="changeRole(${u.id},this.value)">${roleOpts}</select>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
             <span style="font-size:11px;color:var(--muted);min-width:36px">Префикс:</span>
-            <input class="fi" id="prefix-inp-${u.id}" value="${esc(prefixVal)}" placeholder="🔥 Босс" style="font-size:11px;padding:4px 8px;height:28px;flex:1">
-            <input type="color" id="prefix-col-${u.id}" value="${u.prefix_color||'#a78bfa'}" title="Цвет префикса" style="width:28px;height:28px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;padding:2px;flex-shrink:0">
-            <button onclick="savePrefix(${u.id})" class="btn btn-violet btn-xs">Сохр.</button>
+            ${prefixVal ? renderPfxBadge(prefixVal, u.prefix_color||'', u.prefix_style||'solid') : '<span style="font-size:11px;color:var(--muted)">не задан</span>'}
+            <button onclick="openPfxModal(${u.id},'${esc(u.username)}')" class="btn btn-violet btn-xs" style="margin-left:auto">⚙ Настроить</button>
           </div>
         </div>
       </div>`;
@@ -1067,10 +1090,12 @@ async function loadPrefixMap() {
     const data = await api('GET', '/api/users/prefixes');
     prefixMap = {};
     prefixColorMap = {};
+    prefixStyleMap = {};
     Object.entries(data).forEach(([u, info]) => {
       if (typeof info === 'object') {
         prefixMap[u] = info.prefix || '';
         prefixColorMap[u] = info.color || '';
+        prefixStyleMap[u] = info.style || 'solid';
       } else {
         prefixMap[u] = info || '';
       }
@@ -1087,29 +1112,23 @@ function updateHeaderBadge() {
   const roleColors = { admin:'var(--amber)', editor:'var(--violet)', user:'var(--cyan)', guest:'var(--muted)' };
   const prefix = prefixMap[currentUser.username];
   const prefixColor = prefixColorMap[currentUser.username];
+  const prefixStyle = prefixStyleMap[currentUser.username] || 'solid';
   if (prefix) {
-    const col = prefixColor || 'var(--violet)';
-    rl.textContent = prefix;
-    rl.style.color = col;
-    rl.style.background = col.startsWith('#') || col.startsWith('rgb') ? col + '22' : 'rgba(167,139,250,.12)';
-    rl.style.padding = '1px 7px';
-    rl.style.borderRadius = '5px';
-    rl.style.border = '1px solid ' + (col.startsWith('#') || col.startsWith('rgb') ? col + '66' : 'rgba(167,139,250,.3)');
-    rl.style.fontSize = '10px';
-    rl.style.fontFamily = "'Syne',sans-serif";
-    rl.style.fontWeight = '700';
+    // Replace roleLabel element with rendered badge HTML
+    const html = renderPfxBadge(prefix, prefixColor, prefixStyle);
+    rl.outerHTML = `<span id="roleLabel">${html}</span>`;
   } else {
+    rl.innerHTML = '';
+    rl.className = '';
+    rl.style.cssText = '';
     rl.textContent = roleNames[currentUser.role] || currentUser.role;
     rl.style.color = roleColors[currentUser.role] || 'var(--muted)';
-    rl.style.background = '';
-    rl.style.padding = '';
-    rl.style.borderRadius = '';
-    rl.style.border = '';
+    rl.style.fontSize = '11px';
   }
 }
 
 function getPrefix(username) {
-  return { text: prefixMap[username] || '', color: prefixColorMap[username] || '' };
+  return { text: prefixMap[username] || '', color: prefixColorMap[username] || '', style: prefixStyleMap[username] || 'solid' };
 }
 
 // ── Admin: guests toggle ──────────────────────────────────────────────────────
@@ -1149,15 +1168,104 @@ async function clearHistory() {
 }
 
 // ── Admin: prefix ─────────────────────────────────────────────────────────────
-async function savePrefix(id) {
-  const val = document.getElementById('prefix-inp-'+id)?.value || '';
-  const col = document.getElementById('prefix-col-'+id)?.value || '';
+// ── Prefix badge renderer ────────────────────────────────────────────────────
+function renderPfxBadge(text, color, style) {
+  if (!text) return '';
+  const col = color || '#a78bfa';
+  const st = style || 'solid';
+  const cssVar = `--pfx-c1:${col}`;
+  if (st === 'rgb' || st === 'fire') {
+    return `<span class="pfx pfx-${st}">${esc(text)}</span>`;
+  }
+  return `<span class="pfx pfx-${st}" style="${cssVar}">${esc(text)}</span>`;
+}
+
+// ── Prefix modal state ────────────────────────────────────────────────────────
+let pfxEditUserId = null;
+let pfxEditStyle = 'solid';
+
+function openPfxModal(userId, username) {
+  pfxEditUserId = userId;
+  pfxEditStyle = 'solid';
+  document.getElementById('pfxModalUsername').textContent = '@' + username;
+  // Load existing values from prefixMap
+  const existing = prefixMap[username] || '';
+  const existingColor = prefixColorMap[username] || '#a78bfa';
+  const existingStyle = prefixStyleMap[username] || 'solid';
+  document.getElementById('pfxText').value = existing;
+  document.getElementById('pfxColor').value = existingColor.startsWith('#') ? existingColor : '#a78bfa';
+  pfxEditStyle = existingStyle;
+  // Mark active style button
+  document.querySelectorAll('#pfxStyleGrid .pfx-style-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.style === pfxEditStyle);
+  });
+  updatePfxPreview();
+  document.getElementById('pfxModal').classList.remove('hidden');
+  // Update preview on input change
+  document.getElementById('pfxText').oninput = updatePfxPreview;
+  document.getElementById('pfxColor').oninput = updatePfxPreview;
+  document.getElementById('pfxColor2').oninput = updatePfxPreview;
+}
+
+function closePfxModal() {
+  document.getElementById('pfxModal').classList.add('hidden');
+  pfxEditUserId = null;
+}
+
+function selectPfxStyle(style, btn) {
+  pfxEditStyle = style;
+  document.querySelectorAll('#pfxStyleGrid .pfx-style-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // Show/hide second color for gradient
+  document.getElementById('pfxColor2Wrap').style.display = style === 'gradient' ? '' : 'none';
+  updatePfxPreview();
+}
+
+function updatePfxPreview() {
+  const text = document.getElementById('pfxText').value || 'Пример';
+  const col = document.getElementById('pfxColor').value || '#a78bfa';
+  const col2 = document.getElementById('pfxColor2').value || '#67e8f9';
+  const st = pfxEditStyle;
+  const prev = document.getElementById('pfxPreview');
+  prev.className = 'pfx pfx-' + st;
+  prev.textContent = text;
+  if (st === 'rgb' || st === 'fire') {
+    prev.style = '';
+  } else {
+    prev.style.cssText = '--pfx-c1:' + col + ';--pfx-c2:' + col2;
+  }
+}
+
+async function applyPfx() {
+  if (!pfxEditUserId) return;
+  const val = document.getElementById('pfxText').value.trim();
+  const col = document.getElementById('pfxColor').value;
+  const col2 = document.getElementById('pfxColor2').value;
+  const st = pfxEditStyle;
   try {
-    await api('POST', '/api/admin/users/'+id+'/prefix', { prefix: val, color: col });
+    await api('POST', '/api/admin/users/'+pfxEditUserId+'/prefix', { prefix: val, color: col, color2: col2, style: st });
     await loadPrefixMap();
     renderTopics();
+    loadUsers();
+    closePfxModal();
     showToast('Префикс сохранён ✦');
   } catch(e) { showToast(e.message, true); }
+}
+
+async function clearPfx() {
+  if (!pfxEditUserId) return;
+  try {
+    await api('POST', '/api/admin/users/'+pfxEditUserId+'/prefix', { prefix: '', color: '', color2: '', style: 'solid' });
+    await loadPrefixMap();
+    renderTopics();
+    loadUsers();
+    closePfxModal();
+    showToast('Префикс убран ✦');
+  } catch(e) { showToast(e.message, true); }
+}
+
+async function savePrefix(id) {
+  // kept for compatibility - now replaced by modal
 }
 
 // ── Chat: delete message (admin) ──────────────────────────────────────────────
@@ -1400,8 +1508,7 @@ function appendChatMsg(msg) {
   }
 
   const pfx = getPrefix(msg.author);
-  const pfxCol = pfx.color || 'var(--violet)';
-  const prefixHtml = pfx.text ? `<span style="font-size:9px;background:${pfxCol}22;color:${pfxCol};border:1px solid ${pfxCol}66;border-radius:4px;padding:1px 5px;margin-right:2px;font-family:'Syne',sans-serif;font-weight:700">${esc(pfx.text)}</span>` : '';
+  const prefixHtml = pfx.text ? renderPfxBadge(pfx.text, pfx.color, pfx.style) : '';
   const isAdminUser = currentUser?.role === 'admin';
   const delBtn = isAdminUser ? `<button onclick="deleteChatMsg('${msg.id}')" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:2px;border-radius:4px;opacity:0;transition:.15s" class="chat-del-btn" onmouseover="this.style.color='var(--rose)';this.style.opacity='1'" onmouseout="this.style.color='var(--muted)';this.style.opacity='0'"><svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>` : '';
   div.id = 'chatmsg-' + msg.id;
@@ -1529,6 +1636,78 @@ loadChatHistory();
   <div id="recTimerRow" style="display:none;padding:4px 16px 10px;border-top:none">
     <span class="rec-timer" id="recTimerLabel">● 0:00</span>
     <span style="font-size:11px;color:var(--muted);margin-left:8px">Нажмите микрофон ещё раз чтобы остановить</span>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════ PREFIX EDITOR MODAL ═══════════════════════════ -->
+<div id="pfxModal" class="pfx-modal hidden">
+  <div class="pfx-modal-box">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div>
+        <div class="syne" style="font-size:16px;font-weight:800;color:var(--text)">Настройка префикса</div>
+        <div id="pfxModalUsername" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+      </div>
+      <button onclick="closePfxModal()" class="ibtn"><svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+
+    <!-- Text + Color -->
+    <div style="margin-bottom:16px">
+      <label class="flabel">Текст префикса</label>
+      <input id="pfxText" class="fi" placeholder="например: 🔥 Босс" maxlength="20" style="margin-bottom:10px">
+      <div style="display:flex;gap:10px;align-items:center">
+        <div style="flex:1">
+          <label class="flabel">Основной цвет</label>
+          <input type="color" id="pfxColor" value="#a78bfa" style="width:100%;height:36px;border:1px solid var(--border);border-radius:9px;background:none;cursor:pointer;padding:3px 6px">
+        </div>
+        <div style="flex:1" id="pfxColor2Wrap">
+          <label class="flabel">Второй цвет <span style="color:var(--muted)">(для градиента)</span></label>
+          <input type="color" id="pfxColor2" value="#67e8f9" style="width:100%;height:36px;border:1px solid var(--border);border-radius:9px;background:none;cursor:pointer;padding:3px 6px">
+        </div>
+      </div>
+    </div>
+
+    <!-- Style selector -->
+    <div style="margin-bottom:18px">
+      <label class="flabel">Стиль</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px" id="pfxStyleGrid">
+        <div class="pfx-style-btn active" data-style="solid" onclick="selectPfxStyle('solid',this)">
+          <div style="margin-bottom:5px;font-size:10px;color:var(--muted)">Обычный</div>
+          <span class="pfx pfx-solid" style="--pfx-c1:#a78bfa">Пример</span>
+        </div>
+        <div class="pfx-style-btn" data-style="glow" onclick="selectPfxStyle('glow',this)">
+          <div style="margin-bottom:5px;font-size:10px;color:var(--muted)">Свечение</div>
+          <span class="pfx pfx-glow" style="--pfx-c1:#67e8f9">Пример</span>
+        </div>
+        <div class="pfx-style-btn" data-style="rgb" onclick="selectPfxStyle('rgb',this)">
+          <div style="margin-bottom:5px;font-size:10px;color:var(--muted)">RGB</div>
+          <span class="pfx pfx-rgb">Пример</span>
+        </div>
+        <div class="pfx-style-btn" data-style="pulse" onclick="selectPfxStyle('pulse',this)">
+          <div style="margin-bottom:5px;font-size:10px;color:var(--muted)">Пульс</div>
+          <span class="pfx pfx-pulse" style="--pfx-c1:#fb7185">Пример</span>
+        </div>
+        <div class="pfx-style-btn" data-style="neon" onclick="selectPfxStyle('neon',this)">
+          <div style="margin-bottom:5px;font-size:10px;color:var(--muted)">Неон</div>
+          <span class="pfx pfx-neon" style="--pfx-c1:#4ade80">Пример</span>
+        </div>
+        <div class="pfx-style-btn" data-style="fire" onclick="selectPfxStyle('fire',this)">
+          <div style="margin-bottom:5px;font-size:10px;color:var(--muted)">Огонь</div>
+          <span class="pfx pfx-fire">Пример</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live preview -->
+    <div style="margin-bottom:18px;padding:12px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:11px;text-align:center">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:8px;font-family:'Syne',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.06em">Предпросмотр</div>
+      <span id="pfxPreview" class="pfx pfx-solid" style="--pfx-c1:#a78bfa">Пример</span>
+    </div>
+
+    <div style="display:flex;gap:10px">
+      <button onclick="clearPfx()" class="btn btn-rose" style="flex:1;justify-content:center">Убрать префикс</button>
+      <button onclick="applyPfx()" class="btn btn-cyan" style="flex:1;justify-content:center">Сохранить</button>
+    </div>
   </div>
 </div>
 
