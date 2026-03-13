@@ -12,12 +12,29 @@ const io = new Server(server, {
   }
 });
 
-// ВАЖНО: правильный путь к статическим файлам
-app.use(express.static(__dirname));
+// Определяем корректный путь к файлам
+const PUBLIC_DIR = path.join(__dirname);
+console.log('__dirname:', __dirname);
+console.log('PUBLIC_DIR:', PUBLIC_DIR);
+
+// Раздаем статические файлы
+app.use(express.static(PUBLIC_DIR));
 
 // Главная страница
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  const indexPath = path.join(PUBLIC_DIR, 'index.html');
+  console.log('Serving index from:', indexPath);
+  res.sendFile(indexPath);
+});
+
+// Проверка что файлы на месте
+const fs = require('fs');
+fs.readdir(PUBLIC_DIR, (err, files) => {
+  if (err) {
+    console.error('Error reading directory:', err);
+  } else {
+    console.log('Files in directory:', files);
+  }
 });
 
 // Хранилище комнат
@@ -71,5 +88,4 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Static files from: ${__dirname}`);
 });
