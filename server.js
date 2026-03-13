@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const crypto = require('crypto');
-const Database = require('better-sqlite3');
+const { createClient } = require('@libsql/client');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,81 +12,11 @@ const io = new Server(server, { cors: { origin: '*', methods: ['GET', 'POST'] } 
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// ── Database ──────────────────────────────────────────────────────────────────
-const DB_PATH = path.join(__dirname, 'data.db');
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-
-console.log('Database path:', DB_PATH);
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY, value TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    username      TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    role          TEXT DEFAULT 'user',
-    created_at    TEXT DEFAULT (datetime('now','localtime'))
-  );
-  CREATE TABLE IF NOT EXISTS invite_codes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code       TEXT UNIQUE NOT NULL,
-    used       INTEGER DEFAULT 0,
-    used_by    TEXT,
-    created_at TEXT DEFAULT (datetime('now','localtime'))
-  );
-  CREATE TABLE IF NOT EXISTS topics (
-    id         TEXT PRIMARY KEY,
-    title      TEXT NOT NULL,
-    blocks     TEXT NOT NULL,
-    author     TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now','localtime')),
-    updated_at TEXT DEFAULT (datetime('now','localtime'))
-  );
-  CREATE TABLE IF NOT EXISTS comments (
-    id         TEXT PRIMARY KEY,
-    topic_id   TEXT NOT NULL,
-    author     TEXT NOT NULL,
-    content    TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now','localtime'))
-  );
-  CREATE TABLE IF NOT EXISTS history (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    actor      TEXT NOT NULL,
-    action     TEXT NOT NULL,
-    target     TEXT,
-    detail     TEXT,
-    created_at TEXT DEFAULT (datetime('now','localtime'))
-  );
-  CREATE TABLE IF NOT EXISTS sessions (
-    token      TEXT PRIMARY KEY,
-    user_id    INTEGER,
-    username   TEXT NOT NULL,
-    role       TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now','localtime'))
-  );
-`);
-
-// Удаляем сессии старше 30 дней при старте
-db.prepare("DELETE FROM sessions WHERE created_at < datetime('now','-30 days','localtime')").run();
-
-// ── Settings ──────────────────────────────────────────────────────────────────
-function getSetting(key) {
-  return db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value || null;
-}
-function setSetting(key, val) {
-  db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, val);
-}
-if (!getSetting('panel_password')) setSetting('panel_password', hashPw('panel123'));
-if (!getSetting('site_password'))  setSetting('site_password',  hashPw('admin123'));
-
-// Create default admin
-if (!db.prepare("SELECT id FROM users WHERE role='admin' LIMIT 1").get()) {
-  db.prepare("INSERT OR IGNORE INTO users (username,password_hash,role) VALUES ('admin',?,'admin')").run(getSetting('site_password'));
-  console.log('Admin created: admin / admin123');
-}
+// ── Database (Turso) ──────────────────────────────────────────────────────────
+const db = createClient({
+  url: process.env.TURSO_URL,
+  authToken: process.env.TURSO_TOKEN,
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function hashPw(pw) {
@@ -95,35 +25,125 @@ function hashPw(pw) {
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
-function addHistory(actor, action, target, detail) {
-  db.prepare('INSERT INTO history (actor,action,target,detail) VALUES (?,?,?,?)').run(actor, action, target || null, detail || null);
+async function q(sql, args = []) {
+  const r = await db.execute({ sql, args });
+  return r.rows;
+}
+async function q1(sql, args = []) {
+  const rows = await q(sql, args);
+  return rows[0] || null;
+}
+async function run(sql, args = []) {
+  return await db.execute({ sql, args });
+}
+async function addHistory(actor, action, target, detail) {
+  await run("INSERT INTO history (actor,action,target,detail) VALUES (?,?,?,?)",
+    [actor, action, target || null, detail || null]);
 }
 
-// Roles that can create/edit topics
 const EDITOR_ROLES = ['admin', 'editor'];
 
-// ── Sessions (persistent in SQLite) ──────────────────────────────────────────
-function createSession(user) {
+// ── Init DB ───────────────────────────────────────────────────────────────────
+async function initDB() {
+  await db.executeMultiple(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY, value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS users (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      username      TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role          TEXT DEFAULT 'user',
+      created_at    TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS invite_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code       TEXT UNIQUE NOT NULL,
+      used       INTEGER DEFAULT 0,
+      used_by    TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS topics (
+      id         TEXT PRIMARY KEY,
+      title      TEXT NOT NULL,
+      blocks     TEXT NOT NULL,
+      author     TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS comments (
+      id         TEXT PRIMARY KEY,
+      topic_id   TEXT NOT NULL,
+      author     TEXT NOT NULL,
+      content    TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS history (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor      TEXT NOT NULL,
+      action     TEXT NOT NULL,
+      target     TEXT,
+      detail     TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token      TEXT PRIMARY KEY,
+      user_id    INTEGER,
+      username   TEXT NOT NULL,
+      role       TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  await run("DELETE FROM sessions WHERE created_at < datetime('now','-30 days')");
+
+  const pp = await q1("SELECT value FROM settings WHERE key='panel_password'");
+  if (!pp) await run("INSERT INTO settings (key,value) VALUES ('panel_password',?)", [hashPw('panel123')]);
+  const sp = await q1("SELECT value FROM settings WHERE key='site_password'");
+  if (!sp) await run("INSERT INTO settings (key,value) VALUES ('site_password',?)", [hashPw('admin123')]);
+
+  const admin = await q1("SELECT id FROM users WHERE role='admin' LIMIT 1");
+  if (!admin) {
+    const spVal = await q1("SELECT value FROM settings WHERE key='site_password'");
+    await run("INSERT OR IGNORE INTO users (username,password_hash,role) VALUES ('admin',?,'admin')", [spVal.value]);
+    console.log('Admin created: admin / admin123');
+  }
+
+  console.log('Turso DB connected and ready');
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+async function getSetting(key) {
+  const row = await q1("SELECT value FROM settings WHERE key=?", [key]);
+  return row?.value || null;
+}
+async function setSetting(key, val) {
+  await run("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key, val]);
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+async function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
-  db.prepare('INSERT OR REPLACE INTO sessions (token,user_id,username,role) VALUES (?,?,?,?)')
-    .run(token, user.id || null, user.username, user.role);
+  await run("INSERT OR REPLACE INTO sessions (token,user_id,username,role) VALUES (?,?,?,?)",
+    [token, user.id || null, user.username, user.role]);
   return token;
 }
-function getSession(token) {
+async function getSession(token) {
   if (!token) return null;
-  const row = db.prepare('SELECT * FROM sessions WHERE token=?').get(token);
+  const row = await q1("SELECT * FROM sessions WHERE token=?", [token]);
   if (!row) return null;
   return { userId: row.user_id, username: row.username, role: row.role };
 }
-function deleteSession(token) {
-  db.prepare('DELETE FROM sessions WHERE token=?').run(token);
+async function deleteSession(token) {
+  await run("DELETE FROM sessions WHERE token=?", [token]);
 }
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
-  const sess = getSession(req.headers['x-token']);
-  if (!sess) return res.status(401).json({ error: 'Не авторизован' });
-  req.user = sess; next();
+  getSession(req.headers['x-token']).then(sess => {
+    if (!sess) return res.status(401).json({ error: 'Не авторизован' });
+    req.user = sess; next();
+  }).catch(() => res.status(500).json({ error: 'Ошибка сервера' }));
 }
 function requireAdmin(req, res, next) {
   requireAuth(req, res, () => {
@@ -142,65 +162,63 @@ function requireEditor(req, res, next) {
 //  AUTH ROUTES
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Panel password check
-app.post('/api/panel/auth', requireAdmin, (req, res) => {
-  const { password } = req.body;
-  if (hashPw(password) !== getSetting('panel_password'))
-    return res.status(401).json({ error: 'Неверный пароль панели' });
-  res.json({ ok: true });
+app.post('/api/panel/auth', requireAdmin, async (req, res) => {
+  try {
+    const { password } = req.body;
+    const pp = await getSetting('panel_password');
+    if (hashPw(password) !== pp) return res.status(401).json({ error: 'Неверный пароль панели' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Guest login — temporary session saved to DB
-app.post('/api/guest', (req, res) => {
-  const guestName = 'Гость_' + Math.random().toString(36).slice(2, 6).toUpperCase();
-  const fakeUser = { id: null, username: guestName, role: 'guest' };
-  const token = createSession(fakeUser);
-  addHistory(guestName, 'guest_login', null, null);
-  res.json({ token, username: guestName, role: 'guest' });
+app.post('/api/guest', async (req, res) => {
+  try {
+    const guestName = 'Гость_' + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const token = await createSession({ id: null, username: guestName, role: 'guest' });
+    await addHistory(guestName, 'guest_login', null, null);
+    res.json({ token, username: guestName, role: 'guest' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Register
-app.post('/api/register', (req, res) => {
-  const { username, password, code } = req.body;
-  if (!username || !password || !code)
-    return res.status(400).json({ error: 'Заполните все поля' });
-  if (username.trim().length < 3)
-    return res.status(400).json({ error: 'Имя минимум 3 символа' });
-  if (password.length < 4)
-    return res.status(400).json({ error: 'Пароль минимум 4 символа' });
-
-  const invite = db.prepare("SELECT * FROM invite_codes WHERE code=? AND used=0").get(code.trim().toUpperCase());
-  if (!invite) return res.status(400).json({ error: 'Неверный или использованный код' });
-
-  if (db.prepare("SELECT id FROM users WHERE username=?").get(username.trim()))
-    return res.status(400).json({ error: 'Имя пользователя занято' });
-
-  const insertId = db.prepare("INSERT INTO users (username,password_hash) VALUES (?,?)").run(username.trim(), hashPw(password)).lastInsertRowid;
-  db.prepare("UPDATE invite_codes SET used=1, used_by=? WHERE code=?").run(username.trim(), code.trim().toUpperCase());
-
-  const user = db.prepare("SELECT * FROM users WHERE id=?").get(insertId);
-  const token = createSession(user);
-  addHistory(username.trim(), 'register', null, `Код: ${code.toUpperCase()}`);
-  res.json({ token, username: user.username, role: user.role });
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, password, code } = req.body;
+    if (!username || !password || !code) return res.status(400).json({ error: 'Заполните все поля' });
+    if (username.trim().length < 3) return res.status(400).json({ error: 'Имя минимум 3 символа' });
+    if (password.length < 4) return res.status(400).json({ error: 'Пароль минимум 4 символа' });
+    const invite = await q1("SELECT * FROM invite_codes WHERE code=? AND used=0", [code.trim().toUpperCase()]);
+    if (!invite) return res.status(400).json({ error: 'Неверный или использованный код' });
+    const existing = await q1("SELECT id FROM users WHERE username=?", [username.trim()]);
+    if (existing) return res.status(400).json({ error: 'Имя пользователя занято' });
+    const result = await run("INSERT INTO users (username,password_hash) VALUES (?,?)", [username.trim(), hashPw(password)]);
+    const insertId = Number(result.lastInsertRowid);
+    await run("UPDATE invite_codes SET used=1, used_by=? WHERE code=?", [username.trim(), code.trim().toUpperCase()]);
+    const user = await q1("SELECT * FROM users WHERE id=?", [insertId]);
+    const token = await createSession(user);
+    await addHistory(username.trim(), 'register', null, `Код: ${code.toUpperCase()}`);
+    res.json({ token, username: user.username, role: user.role });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Login
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-  const user = db.prepare("SELECT * FROM users WHERE username=?").get(username?.trim());
-  if (!user || user.password_hash !== hashPw(password))
-    return res.status(401).json({ error: 'Неверный логин или пароль' });
-  const token = createSession(user);
-  addHistory(user.username, 'login', null, null);
-  res.json({ token, username: user.username, role: user.role });
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await q1("SELECT * FROM users WHERE username=?", [username?.trim()]);
+    if (!user || user.password_hash !== hashPw(password))
+      return res.status(401).json({ error: 'Неверный логин или пароль' });
+    const token = await createSession(user);
+    await addHistory(user.username, 'login', null, null);
+    res.json({ token, username: user.username, role: user.role });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Logout
-app.post('/api/logout', requireAuth, (req, res) => {
-  deleteSession(req.headers['x-token']); res.json({ ok: true });
+app.post('/api/logout', requireAuth, async (req, res) => {
+  try {
+    await deleteSession(req.headers['x-token']);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Me
 app.get('/api/me', requireAuth, (req, res) => {
   res.json({ username: req.user.username, role: req.user.role });
 });
@@ -209,146 +227,169 @@ app.get('/api/me', requireAuth, (req, res) => {
 //  ADMIN ROUTES
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Change site password
-app.post('/api/admin/change-site-password', requireAdmin, (req, res) => {
-  const { newPassword } = req.body;
-  if (!newPassword || newPassword.length < 4)
-    return res.status(400).json({ error: 'Пароль минимум 4 символа' });
-  const h = hashPw(newPassword);
-  setSetting('site_password', h);
-  db.prepare("UPDATE users SET password_hash=? WHERE role='admin'").run(h);
-  addHistory(req.user.username, 'change_site_password', null, null);
-  res.json({ ok: true });
+app.post('/api/admin/change-site-password', requireAdmin, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 4) return res.status(400).json({ error: 'Пароль минимум 4 символа' });
+    const h = hashPw(newPassword);
+    await setSetting('site_password', h);
+    await run("UPDATE users SET password_hash=? WHERE role='admin'", [h]);
+    await addHistory(req.user.username, 'change_site_password', null, null);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Change panel password
-app.post('/api/admin/change-panel-password', requireAdmin, (req, res) => {
-  const { newPassword } = req.body;
-  if (!newPassword || newPassword.length < 4)
-    return res.status(400).json({ error: 'Пароль минимум 4 символа' });
-  setSetting('panel_password', hashPw(newPassword));
-  addHistory(req.user.username, 'change_panel_password', null, null);
-  res.json({ ok: true });
+app.post('/api/admin/change-panel-password', requireAdmin, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 4) return res.status(400).json({ error: 'Пароль минимум 4 символа' });
+    await setSetting('panel_password', hashPw(newPassword));
+    await addHistory(req.user.username, 'change_panel_password', null, null);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Invite codes
-app.post('/api/admin/invite', requireAdmin, (req, res) => {
-  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-  db.prepare("INSERT INTO invite_codes (code) VALUES (?)").run(code);
-  addHistory(req.user.username, 'create_invite', code, null);
-  res.json({ code });
-});
-app.get('/api/admin/invites', requireAdmin, (req, res) => {
-  res.json(db.prepare("SELECT * FROM invite_codes ORDER BY created_at DESC LIMIT 100").all());
+app.post('/api/admin/invite', requireAdmin, async (req, res) => {
+  try {
+    const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+    await run("INSERT INTO invite_codes (code) VALUES (?)", [code]);
+    await addHistory(req.user.username, 'create_invite', code, null);
+    res.json({ code });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Users
-app.get('/api/admin/users', requireAdmin, (req, res) => {
-  res.json(db.prepare("SELECT id,username,role,created_at FROM users ORDER BY created_at DESC").all());
-});
-app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
-  const u = db.prepare("SELECT * FROM users WHERE id=?").get(req.params.id);
-  if (!u) return res.status(404).json({ error: 'Не найден' });
-  if (u.role === 'admin') return res.status(400).json({ error: 'Нельзя удалить администратора' });
-  db.prepare("DELETE FROM users WHERE id=?").run(req.params.id);
-  db.prepare("DELETE FROM sessions WHERE username=?").run(u.username);
-  addHistory(req.user.username, 'delete_user', u.username, null);
-  res.json({ ok: true });
+app.get('/api/admin/invites', requireAdmin, async (req, res) => {
+  try { res.json(await q("SELECT * FROM invite_codes ORDER BY created_at DESC LIMIT 100")); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Change user role
-app.post('/api/admin/users/:id/role', requireAdmin, (req, res) => {
-  const { role } = req.body;
-  const allowed = ['admin', 'editor', 'user'];
-  if (!allowed.includes(role)) return res.status(400).json({ error: 'Недопустимая роль' });
-  const u = db.prepare("SELECT * FROM users WHERE id=?").get(req.params.id);
-  if (!u) return res.status(404).json({ error: 'Не найден' });
-  db.prepare("UPDATE users SET role=? WHERE id=?").run(role, req.params.id);
-  // Обновляем роль в активных сессиях
-  db.prepare("UPDATE sessions SET role=? WHERE username=?").run(role, u.username);
-  addHistory(req.user.username, 'change_role', u.username, `${u.role} → ${role}`);
-  res.json({ ok: true });
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  try { res.json(await q("SELECT id,username,role,created_at FROM users ORDER BY created_at DESC")); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// History
-app.get('/api/admin/history', requireAdmin, (req, res) => {
-  res.json(db.prepare("SELECT * FROM history ORDER BY created_at DESC LIMIT 300").all());
+app.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
+  try {
+    const u = await q1("SELECT * FROM users WHERE id=?", [req.params.id]);
+    if (!u) return res.status(404).json({ error: 'Не найден' });
+    if (u.role === 'admin') return res.status(400).json({ error: 'Нельзя удалить администратора' });
+    await run("DELETE FROM users WHERE id=?", [req.params.id]);
+    await run("DELETE FROM sessions WHERE username=?", [u.username]);
+    await addHistory(req.user.username, 'delete_user', u.username, null);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/admin/users/:id/role', requireAdmin, async (req, res) => {
+  try {
+    const { role } = req.body;
+    const allowed = ['admin', 'editor', 'user'];
+    if (!allowed.includes(role)) return res.status(400).json({ error: 'Недопустимая роль' });
+    const u = await q1("SELECT * FROM users WHERE id=?", [req.params.id]);
+    if (!u) return res.status(404).json({ error: 'Не найден' });
+    await run("UPDATE users SET role=? WHERE id=?", [role, req.params.id]);
+    await run("UPDATE sessions SET role=? WHERE username=?", [role, u.username]);
+    await addHistory(req.user.username, 'change_role', u.username, `${u.role} → ${role}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/history', requireAdmin, async (req, res) => {
+  try { res.json(await q("SELECT * FROM history ORDER BY created_at DESC LIMIT 300")); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  TOPICS
 // ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/topics', (req, res) => {
-  const rows = db.prepare("SELECT * FROM topics ORDER BY created_at DESC").all();
-  res.json(rows.map(t => ({ ...t, blocks: JSON.parse(t.blocks) })));
+
+app.get('/api/topics', async (req, res) => {
+  try {
+    const rows = await q("SELECT * FROM topics ORDER BY created_at DESC");
+    res.json(rows.map(t => ({ ...t, blocks: JSON.parse(t.blocks) })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/topics', requireEditor, (req, res) => {
-  const { title, blocks } = req.body;
-  if (!title || !blocks?.length) return res.status(400).json({ error: 'Нет данных' });
-  const id = genId();
-  const now = new Date().toLocaleString('ru-RU');
-  db.prepare("INSERT INTO topics (id,title,blocks,author,created_at,updated_at) VALUES (?,?,?,?,?,?)")
-    .run(id, title, JSON.stringify(blocks), req.user.username, now, now);
-  const topic = { id, title, blocks, author: req.user.username, created_at: now, updated_at: now };
-  addHistory(req.user.username, 'create_topic', title, null);
-  io.emit('topic_created', topic);
-  res.json(topic);
+app.post('/api/topics', requireEditor, async (req, res) => {
+  try {
+    const { title, blocks } = req.body;
+    if (!title || !blocks?.length) return res.status(400).json({ error: 'Нет данных' });
+    const id = genId();
+    const now = new Date().toLocaleString('ru-RU');
+    await run("INSERT INTO topics (id,title,blocks,author,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+      [id, title, JSON.stringify(blocks), req.user.username, now, now]);
+    const topic = { id, title, blocks, author: req.user.username, created_at: now, updated_at: now };
+    await addHistory(req.user.username, 'create_topic', title, null);
+    io.emit('topic_created', topic);
+    res.json(topic);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.put('/api/topics/:id', requireEditor, (req, res) => {
-  const { title, blocks } = req.body;
-  const old = db.prepare("SELECT * FROM topics WHERE id=?").get(req.params.id);
-  if (!old) return res.status(404).json({ error: 'Не найдено' });
-  const now = new Date().toLocaleString('ru-RU');
-  db.prepare("UPDATE topics SET title=?,blocks=?,updated_at=? WHERE id=?")
-    .run(title, JSON.stringify(blocks), now, req.params.id);
-  const topic = { ...old, title, blocks, updated_at: now };
-  addHistory(req.user.username, 'edit_topic', title, `Было: "${old.title}"`);
-  io.emit('topic_updated', topic);
-  res.json(topic);
+app.put('/api/topics/:id', requireEditor, async (req, res) => {
+  try {
+    const { title, blocks } = req.body;
+    const old = await q1("SELECT * FROM topics WHERE id=?", [req.params.id]);
+    if (!old) return res.status(404).json({ error: 'Не найдено' });
+    const now = new Date().toLocaleString('ru-RU');
+    await run("UPDATE topics SET title=?,blocks=?,updated_at=? WHERE id=?",
+      [title, JSON.stringify(blocks), now, req.params.id]);
+    const topic = { ...old, title, blocks, updated_at: now };
+    await addHistory(req.user.username, 'edit_topic', title, `Было: "${old.title}"`);
+    io.emit('topic_updated', topic);
+    res.json(topic);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/topics/:id', requireEditor, (req, res) => {
-  const t = db.prepare("SELECT * FROM topics WHERE id=?").get(req.params.id);
-  if (!t) return res.status(404).json({ error: 'Не найдено' });
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Удалять может только администратор' });
-  db.prepare("DELETE FROM topics WHERE id=?").run(req.params.id);
-  db.prepare("DELETE FROM comments WHERE topic_id=?").run(req.params.id);
-  addHistory(req.user.username, 'delete_topic', t.title, null);
-  io.emit('topic_deleted', req.params.id);
-  res.json({ ok: true });
+app.delete('/api/topics/:id', requireEditor, async (req, res) => {
+  try {
+    const t = await q1("SELECT * FROM topics WHERE id=?", [req.params.id]);
+    if (!t) return res.status(404).json({ error: 'Не найдено' });
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Удалять может только администратор' });
+    await run("DELETE FROM topics WHERE id=?", [req.params.id]);
+    await run("DELETE FROM comments WHERE topic_id=?", [req.params.id]);
+    await addHistory(req.user.username, 'delete_topic', t.title, null);
+    io.emit('topic_deleted', req.params.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  COMMENTS
 // ─────────────────────────────────────────────────────────────────────────────
-app.get('/api/topics/:id/comments', (req, res) => {
-  res.json(db.prepare("SELECT * FROM comments WHERE topic_id=? ORDER BY created_at ASC").all(req.params.id));
+
+app.get('/api/topics/:id/comments', async (req, res) => {
+  try {
+    res.json(await q("SELECT * FROM comments WHERE topic_id=? ORDER BY created_at ASC", [req.params.id]));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/topics/:id/comments', requireAuth, (req, res) => {
-  if (req.user.role === 'guest') return res.status(403).json({ error: 'Гости не могут комментировать. Зарегистрируйтесь.' });
-  const { content } = req.body;
-  if (!content?.trim()) return res.status(400).json({ error: 'Пустой комментарий' });
-  const topic = db.prepare("SELECT id,title FROM topics WHERE id=?").get(req.params.id);
-  if (!topic) return res.status(404).json({ error: 'Тема не найдена' });
-  const id = genId();
-  const now = new Date().toLocaleString('ru-RU');
-  const comment = { id, topic_id: req.params.id, author: req.user.username, content: content.trim(), created_at: now };
-  db.prepare("INSERT INTO comments (id,topic_id,author,content,created_at) VALUES (?,?,?,?,?)").run(id, req.params.id, req.user.username, content.trim(), now);
-  addHistory(req.user.username, 'comment', topic.title, content.trim().slice(0, 80));
-  io.emit('comment_added', comment);
-  res.json(comment);
+app.post('/api/topics/:id/comments', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role === 'guest') return res.status(403).json({ error: 'Гости не могут комментировать. Зарегистрируйтесь.' });
+    const { content } = req.body;
+    if (!content?.trim()) return res.status(400).json({ error: 'Пустой комментарий' });
+    const topic = await q1("SELECT id,title FROM topics WHERE id=?", [req.params.id]);
+    if (!topic) return res.status(404).json({ error: 'Тема не найдена' });
+    const id = genId();
+    const now = new Date().toLocaleString('ru-RU');
+    const comment = { id, topic_id: req.params.id, author: req.user.username, content: content.trim(), created_at: now };
+    await run("INSERT INTO comments (id,topic_id,author,content,created_at) VALUES (?,?,?,?,?)",
+      [id, req.params.id, req.user.username, content.trim(), now]);
+    await addHistory(req.user.username, 'comment', topic.title, content.trim().slice(0, 80));
+    io.emit('comment_added', comment);
+    res.json(comment);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/comments/:id', requireAdmin, (req, res) => {
-  const c = db.prepare("SELECT * FROM comments WHERE id=?").get(req.params.id);
-  if (!c) return res.status(404).json({ error: 'Не найдено' });
-  db.prepare("DELETE FROM comments WHERE id=?").run(req.params.id);
-  addHistory(req.user.username, 'delete_comment', c.author, c.content.slice(0, 60));
-  io.emit('comment_deleted', req.params.id);
-  res.json({ ok: true });
+app.delete('/api/comments/:id', requireAdmin, async (req, res) => {
+  try {
+    const c = await q1("SELECT * FROM comments WHERE id=?", [req.params.id]);
+    if (!c) return res.status(404).json({ error: 'Не найдено' });
+    await run("DELETE FROM comments WHERE id=?", [req.params.id]);
+    await addHistory(req.user.username, 'delete_comment', c.author, c.content.slice(0, 60));
+    io.emit('comment_deleted', req.params.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -357,5 +398,11 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 // ── Socket ────────────────────────────────────────────────────────────────────
 io.on('connection', socket => console.log('connected:', socket.id));
 
+// ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT} | DB: ${DB_PATH}`));
+initDB().then(() => {
+  server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}).catch(err => {
+  console.error('DB init failed:', err);
+  process.exit(1);
+});
