@@ -2239,7 +2239,9 @@ function formatRecTime(s) {
 
 async function sendVoiceMessage() {
   if (!recChunks.length) return;
-  const mimeType = recChunks[0].type || 'audio/webm';
+  const rawMime = recChunks[0].type || 'audio/webm';
+  // Strip codec params — Cloudinary only accepts clean mime type
+  const mimeType = rawMime.split(';')[0].trim();
   const blob = new Blob(recChunks, { type: mimeType });
   const duration = recSeconds;
   recChunks = []; // clear after saving blob

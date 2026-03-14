@@ -279,14 +279,18 @@ app.post('/api/upload', requireAuth, async (req, res) => {
     if (sizeBytes > 10 * 1024 * 1024) return res.status(400).json({ error: 'Файл слишком большой (макс 10MB)' });
 
     const isImage = type?.startsWith('image/');
-    const resourceType = isImage ? 'image' : 'raw';
+    const isAudio = type?.startsWith('audio/');
+    const resourceType = isImage ? 'image' : isAudio ? 'video' : 'raw';
+
+    // Cloudinary не принимает параметры кодека в mime-type (audio/webm;codecs=opus -> audio/webm)
+    const cleanType = (type || '').split(';')[0].trim();
 
     const result = await uploadToCloudinary(
-      `data:${type};base64,${data}`,
+      `data:${cleanType};base64,${data}`,
       resourceType
     );
 
-    res.json({ url: result.secure_url, type: isImage ? 'image' : 'file', original_type: type });
+    res.json({ url: result.secure_url, type: isImage ? 'image' : isAudio ? 'audio' : 'file', original_type: type });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -640,6 +644,29 @@ app.post('/api/admin/users/:id/prefix', requireAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.delete('/api/admin/chat', requireAdmin, async (req, res) => {
+  try {
+    await run("DELETE FROM chat_messages");
+    await addHistory(req.user.username, 'clear_chat', null, null);
+    io.emit('chat_cleared');
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/chat/:id', requireAdmin, async (req, res) => {
+  try {
+    await run("DELETE FROM chat_messages WHERE id=?", [req.params.id]);
+    io.emit('chat_msg_deleted', req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/admin/history', requireAdmin, async (req, res) => {
+  try {
+    await run("DELETE FROM history");
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  CHAT
