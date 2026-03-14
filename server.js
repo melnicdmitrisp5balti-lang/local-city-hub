@@ -741,6 +741,56 @@ app.get('/api/users/prefixes', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DATABASE VIEWER ROUTES
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/admin/db/users', requireAdmin, async (req, res) => {
+  try {
+    const rows = await q(`SELECT
+      id, username, role, prefix, prefix_style, prefix_color,
+      created_at, password_hash
+      FROM users ORDER BY created_at DESC`);
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/db/topics', requireAdmin, async (req, res) => {
+  try {
+    const rows = await q(`SELECT
+      id, title, author, pinned, sort_order, created_at, updated_at
+      FROM topics ORDER BY pinned DESC, sort_order ASC, created_at DESC`);
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/db/comments', requireAdmin, async (req, res) => {
+  try {
+    const rows = await q(`SELECT
+      id, topic_id, author, content, file_url, file_type, created_at
+      FROM comments ORDER BY created_at DESC LIMIT 300`);
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/db/chat', requireAdmin, async (req, res) => {
+  try {
+    const rows = await q(`SELECT
+      id, author, text, file_url, file_type, voice_url, voice_duration, created_at
+      FROM chat_messages ORDER BY created_at DESC LIMIT 300`);
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/admin/db/invites', requireAdmin, async (req, res) => {
+  try {
+    const rows = await q(`SELECT
+      id, code, used, used_by, created_at
+      FROM invite_codes ORDER BY created_at DESC`);
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 

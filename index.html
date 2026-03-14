@@ -223,6 +223,23 @@ mark{background:rgba(103,232,249,.2);color:var(--cyan);border-radius:2px;padding
   .pg-header{padding:8px 12px;gap:6px}
   .pg-tab{padding:4px 8px;font-size:10px}
 }
+
+/* ── DB Viewer ──────────────────────────────────────────────────────────────── */
+.db-table-btn{font-size:10px!important;padding:4px 10px!important}
+.db-table-btn.active-db{border-color:rgba(103,232,249,.4)!important;color:var(--cyan)!important;background:rgba(103,232,249,.08)!important}
+#dbTable th{padding:8px 10px;text-align:left;font-family:'Syne',sans-serif;font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);white-space:nowrap}
+#dbTable td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--soft);font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top}
+#dbTable tr:last-child td{border-bottom:none}
+#dbTable tr:hover td{background:rgba(103,232,249,.03)}
+#dbTable td.db-id{color:var(--muted);font-family:'Syne',sans-serif;font-size:10px}
+#dbTable td.db-role-admin{color:var(--amber);font-weight:700;font-family:'Syne',sans-serif}
+#dbTable td.db-role-editor{color:var(--violet);font-family:'Syne',sans-serif}
+#dbTable td.db-role-user{color:var(--cyan);font-family:'Syne',sans-serif}
+#dbTable td.db-hash{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);max-width:120px}
+#dbTable td.db-bool-yes{color:var(--green);font-weight:700}
+#dbTable td.db-bool-no{color:var(--muted)}
+.db-copy-btn{background:none;border:none;cursor:pointer;color:var(--muted);padding:1px 4px;border-radius:3px;font-size:10px;transition:.15s}
+.db-copy-btn:hover{color:var(--cyan);background:var(--cyan-dim)}
 </style>
 </head>
 <body>
@@ -388,6 +405,7 @@ mark{background:rgba(103,232,249,.2);color:var(--cyan);border-radius:2px;padding
         <button class="tab active" id="ptInvites" onclick="switchPanelTab('invites')">Коды</button>
         <button class="tab" id="ptUsers"   onclick="switchPanelTab('users')">Юзеры</button>
         <button class="tab" id="ptHistory" onclick="switchPanelTab('history')">История</button>
+        <button class="tab" id="ptDb"      onclick="switchPanelTab('db')">БД</button>
         <button class="tab" id="ptSettings" onclick="switchPanelTab('settings')">Пароли</button>
       </div>
 
@@ -436,6 +454,33 @@ mark{background:rgba(103,232,249,.2);color:var(--cyan);border-radius:2px;padding
           <div style="font-size:12px;color:var(--soft);margin-bottom:10px">Очистить журнал действий администратора</div>
           <button onclick="clearHistoryLog()" class="btn btn-rose btn-full">Очистить историю</button>
         </div>
+      </div>
+
+      <!-- DATABASE VIEWER -->
+      <div id="tabDb" class="hidden">
+        <!-- Table selector -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+          <button onclick="dbLoad('users')"    id="dbBtnUsers"    class="btn btn-ghost btn-sm db-table-btn active-db">👤 Пользователи</button>
+          <button onclick="dbLoad('topics')"   id="dbBtnTopics"   class="btn btn-ghost btn-sm db-table-btn">📄 Темы</button>
+          <button onclick="dbLoad('comments')" id="dbBtnComments" class="btn btn-ghost btn-sm db-table-btn">💬 Комментарии</button>
+          <button onclick="dbLoad('chat')"     id="dbBtnChat"     class="btn btn-ghost btn-sm db-table-btn">🗨 Чат</button>
+          <button onclick="dbLoad('invites')"  id="dbBtnInvites"  class="btn btn-ghost btn-sm db-table-btn">🔑 Инвайты</button>
+        </div>
+        <!-- Search -->
+        <div style="position:relative;margin-bottom:10px">
+          <input id="dbSearch" class="fi" placeholder="Поиск по таблице..." style="font-size:12px;padding:7px 12px 7px 32px" oninput="dbFilter()">
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+        </div>
+        <!-- Stats row -->
+        <div id="dbStats" style="font-size:11px;color:var(--muted);margin-bottom:8px;font-family:'Syne',sans-serif"></div>
+        <!-- Table -->
+        <div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">
+          <table id="dbTable" style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead id="dbHead"></thead>
+            <tbody id="dbBody"></tbody>
+          </table>
+        </div>
+        <div id="dbEmpty" style="text-align:center;padding:30px;color:var(--muted);font-size:13px;display:none">Нет данных</div>
       </div>
 
       <!-- SETTINGS / PASSWORDS -->
@@ -1021,7 +1066,7 @@ async function verifyPanel(){
 }
 
 function switchPanelTab(t){
-  ['invites','users','history','settings'].forEach(x=>{
+  ['invites','users','history','db','settings'].forEach(x=>{
     const tabEl = document.getElementById('tab'+cap(x));
     const btnEl = document.getElementById('pt'+cap(x));
     if(tabEl) tabEl.classList.toggle('hidden',x!==t);
@@ -1030,6 +1075,7 @@ function switchPanelTab(t){
   if(t==='invites') loadInvites();
   if(t==='users') loadUsers();
   if(t==='history') loadHistory();
+  if(t==='db') dbLoad('users');
   if(t==='settings') loadGuestsSetting();
   if(t==='moderation') loadGuestsSetting();
   if(t==='settings') loadGuestsSetting();
@@ -1477,6 +1523,23 @@ function pgBuildDoc() {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 ${pgCode.css}
+
+/* ── DB Viewer ──────────────────────────────────────────────────────────────── */
+.db-table-btn{font-size:10px!important;padding:4px 10px!important}
+.db-table-btn.active-db{border-color:rgba(103,232,249,.4)!important;color:var(--cyan)!important;background:rgba(103,232,249,.08)!important}
+#dbTable th{padding:8px 10px;text-align:left;font-family:'Syne',sans-serif;font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);background:rgba(255,255,255,.02);white-space:nowrap}
+#dbTable td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--soft);font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top}
+#dbTable tr:last-child td{border-bottom:none}
+#dbTable tr:hover td{background:rgba(103,232,249,.03)}
+#dbTable td.db-id{color:var(--muted);font-family:'Syne',sans-serif;font-size:10px}
+#dbTable td.db-role-admin{color:var(--amber);font-weight:700;font-family:'Syne',sans-serif}
+#dbTable td.db-role-editor{color:var(--violet);font-family:'Syne',sans-serif}
+#dbTable td.db-role-user{color:var(--cyan);font-family:'Syne',sans-serif}
+#dbTable td.db-hash{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);max-width:120px}
+#dbTable td.db-bool-yes{color:var(--green);font-weight:700}
+#dbTable td.db-bool-no{color:var(--muted)}
+.db-copy-btn{background:none;border:none;cursor:pointer;color:var(--muted);padding:1px 4px;border-radius:3px;font-size:10px;transition:.15s}
+.db-copy-btn:hover{color:var(--cyan);background:var(--cyan-dim)}
 </style>
 </head>
 <body>
@@ -1552,6 +1615,133 @@ document.addEventListener('DOMContentLoaded', () => {
   if (pgAutoRunEnabled) pgRun();
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  DATABASE VIEWER
+// ══════════════════════════════════════════════════════════════════════════════
+let dbCurrentTable = 'users';
+let dbRawRows = [];
+
+const DB_TABLES = {
+  users:    { endpoint: '/api/admin/db/users',    label: 'Пользователи' },
+  topics:   { endpoint: '/api/admin/db/topics',   label: 'Темы' },
+  comments: { endpoint: '/api/admin/db/comments', label: 'Комментарии' },
+  chat:     { endpoint: '/api/admin/db/chat',     label: 'Чат' },
+  invites:  { endpoint: '/api/admin/db/invites',  label: 'Инвайты' },
+};
+
+async function dbLoad(table) {
+  dbCurrentTable = table;
+  // Update active button
+  document.querySelectorAll('.db-table-btn').forEach(b => b.classList.remove('active-db'));
+  const activeBtn = document.getElementById('dbBtn' + cap(table));
+  if (activeBtn) activeBtn.classList.add('active-db');
+  document.getElementById('dbSearch').value = '';
+  document.getElementById('dbStats').textContent = 'Загрузка...';
+  document.getElementById('dbHead').innerHTML = '';
+  document.getElementById('dbBody').innerHTML = '';
+  document.getElementById('dbEmpty').style.display = 'none';
+  try {
+    const rows = await api('GET', DB_TABLES[table].endpoint);
+    dbRawRows = rows;
+    dbRender(rows);
+  } catch(e) {
+    document.getElementById('dbStats').textContent = 'Ошибка: ' + e.message;
+  }
+}
+
+function dbFilter() {
+  const q = document.getElementById('dbSearch').value.toLowerCase();
+  if (!q) { dbRender(dbRawRows); return; }
+  const filtered = dbRawRows.filter(row =>
+    Object.values(row).some(v => String(v||'').toLowerCase().includes(q))
+  );
+  dbRender(filtered);
+}
+
+function dbRender(rows) {
+  const head = document.getElementById('dbHead');
+  const body = document.getElementById('dbBody');
+  const stats = document.getElementById('dbStats');
+  const empty = document.getElementById('dbEmpty');
+
+  if (!rows.length) {
+    head.innerHTML = ''; body.innerHTML = '';
+    empty.style.display = 'block';
+    stats.textContent = 'Записей: 0';
+    return;
+  }
+  empty.style.display = 'none';
+  stats.textContent = `Записей: ${rows.length} • Таблица: ${DB_TABLES[dbCurrentTable]?.label || dbCurrentTable}`;
+
+  // Build columns - filter out huge fields for display
+  const allCols = Object.keys(rows[0]);
+  // Put important cols first
+  const priority = ['id','username','role','prefix','created_at','used','used_by','author','title','content','text','action','actor'];
+  const cols = [...priority.filter(p => allCols.includes(p)), ...allCols.filter(c => !priority.includes(c))];
+
+  // Header
+  head.innerHTML = '<tr>' + cols.map(col =>
+    `<th>${esc(col)}</th>`
+  ).join('') + '</tr>';
+
+  // Rows
+  body.innerHTML = rows.map(row => {
+    return '<tr>' + cols.map(col => {
+      const val = row[col];
+      return `<td class="${dbCellClass(col, val)}" title="${esc(String(val||''))}">${dbCellHtml(col, val)}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+}
+
+function dbCellClass(col, val) {
+  if (col === 'id') return 'db-id';
+  if (col === 'password_hash' || col === 'prefix_color') return 'db-hash';
+  if (col === 'role') {
+    if (val === 'admin') return 'db-role-admin';
+    if (val === 'editor') return 'db-role-editor';
+    return 'db-role-user';
+  }
+  if (col === 'used' || col === 'pinned') return val ? 'db-bool-yes' : 'db-bool-no';
+  return '';
+}
+
+function dbCellHtml(col, val) {
+  if (val === null || val === undefined || val === '') return '<span style="color:var(--muted);font-size:10px">null</span>';
+
+  // Password hash - show masked + copy
+  if (col === 'password_hash') {
+    const short = String(val).slice(0, 16) + '...';
+    return `<span>${esc(short)}</span><button class="db-copy-btn" onclick="event.stopPropagation();navigator.clipboard.writeText('${esc(String(val))}').then(()=>showToast('Скопировано'))" title="Скопировать хэш">⧉</button>`;
+  }
+
+  // Blocks / JSON - show compact
+  if (col === 'blocks' || col === 'detail') {
+    const str = String(val);
+    const short = str.length > 40 ? str.slice(0, 40) + '…' : str;
+    return `<span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted)" title="${esc(str)}">${esc(short)}</span>`;
+  }
+
+  // Bool fields
+  if (col === 'used' || col === 'pinned') {
+    return val ? '<span style="color:var(--green)">✓ Да</span>' : '<span style="color:var(--muted)">✗ Нет</span>';
+  }
+
+  // Role badges
+  if (col === 'role') {
+    const colors = { admin:'var(--amber)', editor:'var(--violet)', user:'var(--cyan)', guest:'var(--muted)' };
+    const labels = { admin:'Админ', editor:'Редактор', user:'Участник', guest:'Гость' };
+    const col2 = colors[val] || 'var(--soft)';
+    return `<span style="background:${col2}22;color:${col2};border:1px solid ${col2}44;padding:1px 6px;border-radius:4px;font-family:'Syne',sans-serif;font-size:10px;font-weight:700">${labels[val]||esc(val)}</span>`;
+  }
+
+  // Long text - truncate
+  const str = String(val);
+  if (str.length > 50) {
+    return `<span title="${esc(str)}">${esc(str.slice(0, 50))}…</span>`;
+  }
+  return esc(str);
+}
 // ── Utils ─────────────────────────────────────────────────────────────────────
 function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}
 function hlText(text,q){if(!q)return esc(text);return esc(text).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');}
