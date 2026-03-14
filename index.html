@@ -2186,10 +2186,11 @@ async function startVoiceRecord() {
       : {};
 
     mediaRecorder = new MediaRecorder(stream, options);
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+    mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) recChunks.push(e.data); };
     mediaRecorder.onstop = () => {
       stream.getTracks().forEach(t => t.stop());
-      sendVoiceMessage();
+      // Small delay to ensure all ondataavailable callbacks have fired
+      setTimeout(() => sendVoiceMessage(), 100);
     };
     mediaRecorder.start(100);
     isRecording = true;
@@ -2215,6 +2216,10 @@ async function startVoiceRecord() {
 
 function stopVoiceRecord() {
   if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  // Request any buffered data before stopping
+  if (mediaRecorder.state === 'recording') {
+    mediaRecorder.requestData();
+  }
   mediaRecorder.stop();
   isRecording = false;
   clearInterval(recTimerInterval);
@@ -2237,27 +2242,31 @@ async function sendVoiceMessage() {
   const mimeType = recChunks[0].type || 'audio/webm';
   const blob = new Blob(recChunks, { type: mimeType });
   const duration = recSeconds;
-  recChunks = [];
+  recChunks = []; // clear after saving blob
 
-  if (blob.size < 500) return; // too short
+  if (blob.size < 500) { showToast('Запись слишком короткая', true); return; }
 
+  showToast('Отправляю голосовое...');
   try {
-    showToast('Отправляю голосовое...');
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result.split(',')[1];
-      const result = await uploadFile(base64, mimeType);
-      const msgData = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2,5),
-        text: '',
-        voice_url: result.url,
-        voice_duration: duration,
-      };
-      await api('POST', '/api/chat', msgData);
+    // Convert blob to base64 using Promise (not callback)
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    const result = await uploadFile(base64, mimeType);
+    const msgData = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2,5),
+      text: '',
+      voice_url: result.url,
+      voice_duration: duration,
     };
-    reader.readAsDataURL(blob);
+    await api('POST', '/api/chat', msgData);
+    showToast('Голосовое отправлено ✦');
   } catch(e) {
-    showToast('Ошибка отправки голосового: ' + e.message, true);
+    showToast('Ошибка отправки: ' + e.message, true);
   }
 }
 
