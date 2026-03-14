@@ -458,6 +458,24 @@ mark{background:rgba(103,232,249,.2);color:var(--cyan);border-radius:2px;padding
 
       <!-- DATABASE VIEWER -->
       <div id="tabDb" class="hidden">
+
+        <!-- Auth gate -->
+        <div id="dbAuthBox">
+          <div style="background:rgba(103,232,249,.04);border:1px solid rgba(103,232,249,.13);border-radius:13px;padding:24px;text-align:center">
+            <div style="font-size:32px;margin-bottom:10px">🗄️</div>
+            <div class="syne" style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:4px">База данных</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Введите пароль БД для доступа<br><span style="font-size:10px;color:var(--muted);opacity:.6">По умолчанию: db1234</span></div>
+            <input id="dbPwInput" class="fi" type="password" placeholder="Пароль БД" style="margin-bottom:10px;text-align:center;letter-spacing:.1em" onkeydown="if(event.key==='Enter')verifyDbAccess()">
+            <p id="dbAuthErr" class="hidden" style="color:var(--rose);font-size:12px;margin-bottom:10px"></p>
+            <button onclick="verifyDbAccess()" class="btn btn-cyan btn-full">
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+              Войти в БД
+            </button>
+          </div>
+        </div>
+
+        <!-- DB Content (hidden until auth) -->
+        <div id="dbContent" class="hidden">
         <!-- Table selector -->
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
           <button onclick="dbLoad('users')"    id="dbBtnUsers"    class="btn btn-ghost btn-sm db-table-btn active-db">👤 Пользователи</button>
@@ -481,6 +499,25 @@ mark{background:rgba(103,232,249,.2);color:var(--cyan);border-radius:2px;padding
           </table>
         </div>
         <div id="dbEmpty" style="text-align:center;padding:30px;color:var(--muted);font-size:13px;display:none">Нет данных</div>
+
+        <!-- Change DB password -->
+        <div style="margin-top:16px;padding:14px;background:rgba(251,113,133,.04);border:1px solid rgba(251,113,133,.13);border-radius:11px">
+          <div class="syne" style="font-size:10px;font-weight:700;color:var(--rose);letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px">🔐 Сменить пароль БД</div>
+          <div style="display:flex;gap:8px">
+            <input id="dbNewPw1" class="fi" type="password" placeholder="Новый пароль" style="font-size:12px;flex:1">
+            <input id="dbNewPw2" class="fi" type="password" placeholder="Повторить" style="font-size:12px;flex:1">
+            <button onclick="changeDbPassword()" class="btn btn-rose btn-sm">Сменить</button>
+          </div>
+        </div>
+
+        <!-- Logout DB -->
+        <div style="margin-top:10px;text-align:right">
+          <button onclick="dbResetAuth()" class="btn btn-ghost btn-sm" style="font-size:11px">
+            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+            Выйти из БД
+          </button>
+        </div>
+        </div> <!-- /dbContent -->
       </div>
 
       <!-- SETTINGS / PASSWORDS -->
@@ -1054,7 +1091,7 @@ async function deleteComment(id){
 
 // ── Admin panel ───────────────────────────────────────────────────────────────
 function openAdminSide(){document.getElementById('adminSide').classList.add('open');}
-function closeAdminSide(){document.getElementById('adminSide').classList.remove('open');}
+function closeAdminSide(){document.getElementById('adminSide').classList.remove('open');dbResetAuth();}
 
 async function verifyPanel(){
   try{
@@ -1075,7 +1112,7 @@ function switchPanelTab(t){
   if(t==='invites') loadInvites();
   if(t==='users') loadUsers();
   if(t==='history') loadHistory();
-  if(t==='db') dbLoad('users');
+  if(t==='db') { /* auth handled by verifyDbAccess */ }
   if(t==='settings') loadGuestsSetting();
   if(t==='moderation') loadGuestsSetting();
   if(t==='settings') loadGuestsSetting();
@@ -1629,6 +1666,46 @@ const DB_TABLES = {
   chat:     { endpoint: '/api/admin/db/chat',     label: 'Чат' },
   invites:  { endpoint: '/api/admin/db/invites',  label: 'Инвайты' },
 };
+
+async function verifyDbAccess() {
+  const pw = document.getElementById('dbPwInput').value;
+  const errEl = document.getElementById('dbAuthErr');
+  errEl.classList.add('hidden');
+  if (!pw) { errEl.textContent = 'Введите пароль'; errEl.classList.remove('hidden'); return; }
+  try {
+    await api('POST', '/api/admin/db/auth', { password: pw });
+    document.getElementById('dbAuthBox').classList.add('hidden');
+    document.getElementById('dbContent').classList.remove('hidden');
+    document.getElementById('dbPwInput').value = '';
+    dbLoad('users');
+  } catch(e) {
+    errEl.textContent = 'Неверный пароль БД';
+    errEl.classList.remove('hidden');
+    document.getElementById('dbPwInput').value = '';
+    document.getElementById('dbPwInput').focus();
+  }
+}
+
+function dbResetAuth() {
+  document.getElementById('dbAuthBox').classList.remove('hidden');
+  document.getElementById('dbContent').classList.add('hidden');
+  document.getElementById('dbPwInput').value = '';
+  document.getElementById('dbAuthErr').classList.add('hidden');
+}
+
+async function changeDbPassword() {
+  const p1 = document.getElementById('dbNewPw1').value;
+  const p2 = document.getElementById('dbNewPw2').value;
+  if (!p1) { showToast('Введите новый пароль', true); return; }
+  if (p1 !== p2) { showToast('Пароли не совпадают', true); return; }
+  if (p1.length < 4) { showToast('Минимум 4 символа', true); return; }
+  try {
+    await api('POST', '/api/admin/db/change-password', { newPassword: p1 });
+    document.getElementById('dbNewPw1').value = '';
+    document.getElementById('dbNewPw2').value = '';
+    showToast('Пароль БД изменён ✦');
+  } catch(e) { showToast(e.message, true); }
+}
 
 async function dbLoad(table) {
   dbCurrentTable = table;

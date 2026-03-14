@@ -165,6 +165,9 @@ async function initDB() {
   if (!pp) await run("INSERT INTO settings (key,value) VALUES ('panel_password',?)", [hashPw('panel123')]);
   const sp = await q1("SELECT value FROM settings WHERE key='site_password'");
   if (!sp) await run("INSERT INTO settings (key,value) VALUES ('site_password',?)", [hashPw('admin123')]);
+  const dp = await q1("SELECT value FROM settings WHERE key='db_password'");
+  if (!dp) await run("INSERT INTO settings (key,value) VALUES ('db_password',?)", [hashPw('db1234')]);
+  console.log('Default DB password: db1234');
 
   const admin = await q1("SELECT id FROM users WHERE role='admin' LIMIT 1");
   if (!admin) {
@@ -301,6 +304,27 @@ app.post('/api/panel/auth', requireAdmin, async (req, res) => {
     if (hashPw(password) !== pp) return res.status(401).json({ error: 'Неверный пароль панели' });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DB password auth
+app.post('/api/admin/db/auth', requireAdmin, async (req, res) => {
+  try {
+    const { password } = req.body;
+    const dp = await getSetting('db_password');
+    if (hashPw(password) !== dp) return res.status(401).json({ error: 'Неверный пароль БД' });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Change DB password
+app.post('/api/admin/db/change-password', requireAdmin, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 4) return res.status(400).json({ error: 'Минимум 4 символа' });
+    await setSetting('db_password', hashPw(newPassword));
+    await addHistory(req.user.username, 'change_db_password', null, null);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/guest', async (req, res) => {
