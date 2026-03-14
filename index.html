@@ -219,9 +219,16 @@ mark{background:rgba(103,232,249,.2);color:var(--cyan);border-radius:2px;padding
   .pg-editor-col{width:100%;border-right:none;border-bottom:1px solid var(--border)}
   .pg-preview-col{min-height:200px}
   .pg-btn-text{display:none}
-  #pgMobileToggle{display:flex!important}
-  .pg-header{padding:8px 12px;gap:6px}
-  .pg-tab{padding:4px 8px;font-size:10px}
+  .pg-header{padding:8px 10px;gap:5px}
+  .pg-tab{padding:4px 7px;font-size:10px}
+  .pg-title-text{display:none}
+  .pg-lang-badge{display:none}
+  .pg-header-row2{display:flex!important}
+}
+@media(min-width:641px){
+  .pg-header-row2 .btn{font-size:11px}
+  #pgMobileToggle{display:none!important}
+  .pg-lang-badge{display:inline-block}
 }
 
 /* ── DB Viewer ──────────────────────────────────────────────────────────────── */
@@ -660,43 +667,53 @@ mark{background:rgba(103,232,249,.2);color:var(--cyan);border-radius:2px;padding
 
 <!-- ══════════════════════════ PLAYGROUND WINDOW ═════════════════════════════ -->
 <div id="playgroundWin" class="pg-win">
-  <div class="pg-header">
-    <div class="logo" style="width:30px;height:30px;flex-shrink:0">
-      <svg width="14" height="14" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+  <!-- Строка 1: лого + вкладки + закрыть -->
+  <div class="pg-header pg-header-row1">
+    <div class="logo" style="width:28px;height:28px;flex-shrink:0">
+      <svg width="13" height="13" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
     </div>
-    <span class="syne" style="font-size:13px;font-weight:800;color:var(--text)">Тестирование кода</span>
-    <div class="pg-tabs" style="margin-left:4px">
+    <span class="syne pg-title-text" style="font-size:12px;font-weight:800;color:var(--text);white-space:nowrap">Код</span>
+    <div class="pg-tabs">
       <button class="pg-tab active" id="pgTabHtml" onclick="switchPgTab('html')">HTML</button>
       <button class="pg-tab" id="pgTabCss"  onclick="switchPgTab('css')">CSS</button>
       <button class="pg-tab" id="pgTabJs"   onclick="switchPgTab('js')">JS</button>
     </div>
     <span id="pgLangLabel" class="pg-lang-badge" style="background:rgba(251,191,36,.15);color:var(--amber)">HTML</span>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
-      <button id="pgModeEditor" class="pg-tab active" onclick="pgSetMode('editor')"><span class="pg-btn-text">Редактор</span></button>
-      <button id="pgModePreview" class="pg-tab" onclick="pgSetMode('preview')"><span class="pg-btn-text">Превью</span></button>
-      <span id="pgAutoRunLabel" style="font-size:10px;color:var(--teal);font-family:'Syne',sans-serif;font-weight:700">● авто</span>
-      <button id="pgAutoRunBtn" class="btn btn-ghost btn-xs" onclick="pgToggleAutoRun()">Выкл</button>
-      <button onclick="pgInsertSnippet()" class="btn btn-ghost btn-xs" title="Вставить шаблон">
-        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-        <span class="pg-btn-text">Шаблон</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:5px">
+      <button id="pgModeEditor" class="pg-tab active" onclick="pgSetMode('editor')">
+        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        <span class="pg-btn-text" style="margin-left:3px">Ред.</span>
       </button>
-      <button onclick="pgRun()" class="btn btn-teal btn-xs">
-        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/></svg>
-        <span class="pg-btn-text">Запустить</span>
+      <button id="pgModePreview" class="pg-tab" onclick="pgSetMode('preview')">
+        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        <span class="pg-btn-text" style="margin-left:3px">Вид</span>
       </button>
-      <button onclick="pgOpenNewTab()" class="btn btn-violet btn-xs">
-        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-        <span class="pg-btn-text">Открыть</span>
-      </button>
-      <button onclick="pgClear()" class="btn btn-rose btn-xs">
-        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-        <span class="pg-btn-text">Очистить</span>
-      </button>
-      <button id="pgMobileToggle" style="display:none" class="btn btn-ghost btn-xs" onclick="pgToggleMobileView()">⇄</button>
-      <button onclick="closePlayground()" class="ibtn" title="Закрыть">
+      <button onclick="closePlayground()" class="ibtn" title="Закрыть" style="flex-shrink:0">
         <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
     </div>
+  </div>
+  <!-- Строка 2: кнопки действий -->
+  <div class="pg-header pg-header-row2" style="padding:6px 12px;gap:6px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch">
+    <span id="pgAutoRunLabel" style="font-size:10px;color:var(--teal);font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;flex-shrink:0">● авто</span>
+    <button id="pgAutoRunBtn" class="btn btn-ghost btn-xs" onclick="pgToggleAutoRun()" style="flex-shrink:0">Выкл</button>
+    <button onclick="pgRun()" class="btn btn-teal btn-xs" style="flex-shrink:0">
+      <svg width="11" height="11" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      Запуск
+    </button>
+    <button onclick="pgInsertSnippet()" class="btn btn-ghost btn-xs" style="flex-shrink:0">
+      <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      Шаблон
+    </button>
+    <button onclick="pgOpenNewTab()" class="btn btn-violet btn-xs" style="flex-shrink:0">
+      <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+      Открыть
+    </button>
+    <button onclick="pgClear()" class="btn btn-rose btn-xs" style="flex-shrink:0">
+      <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      Очистить
+    </button>
+    <button id="pgMobileToggle" class="btn btn-cyan btn-xs" onclick="pgToggleMobileView()" style="flex-shrink:0">⇄ Вид</button>
   </div>
   <div class="pg-body">
     <div id="pgEditorCol" class="pg-editor-col" style="display:flex;flex-direction:column">
@@ -1736,10 +1753,19 @@ function _setupMonaco() {
 
 function openPlayground() {
   document.getElementById('playgroundWin').classList.add('open');
+  // On mobile: show only editor by default, hide preview
+  if (window.innerWidth <= 640) {
+    const ed = document.getElementById('pgEditorCol');
+    const pv = document.getElementById('pgPreviewCol');
+    if (ed) ed.style.display = 'flex';
+    if (pv) pv.style.display = 'none';
+    const btn = document.getElementById('pgMobileToggle');
+    if (btn) btn.textContent = '👁 Вид';
+  }
   if (!monacoReady) {
     setTimeout(initMonaco, 100);
   } else {
-    setTimeout(() => { monacoEditor && monacoEditor.focus(); }, 300);
+    setTimeout(() => { monacoEditor && monacoEditor.layout(); monacoEditor && monacoEditor.focus(); }, 300);
   }
 }
 
@@ -2129,7 +2155,10 @@ function pgToggleMobileView() {
   const edVis = ed.style.display !== 'none';
   ed.style.display = edVis ? 'none' : 'flex';
   pv.style.display = edVis ? 'flex' : 'none';
-  if (!edVis && monacoEditor) setTimeout(() => monacoEditor.layout(), 50);
+  const btn = document.getElementById('pgMobileToggle');
+  if (btn) btn.textContent = edVis ? '✎ Ред.' : '👁 Вид';
+  if (!edVis && monacoEditor) setTimeout(() => monacoEditor.layout(), 100);
+  else if (edVis) pgRun();
 }
 
 // ── showToast ──────────────────────────────────────────────────────────────────
