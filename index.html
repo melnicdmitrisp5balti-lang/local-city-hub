@@ -648,6 +648,10 @@ mark{background:rgba(103,232,249,.2);color:var(--cyan);border-radius:2px;padding
       <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
     </label>
     <textarea id="chatInput" class="chat-ta" placeholder="Сообщение..." rows="1" onkeydown="chatKeydown(event)" oninput="chatInputResize(this)"></textarea>
+    <span id="chatRecTimer" class="rec-timer hidden"></span>
+    <button id="chatMicBtn" onclick="toggleVoiceRecord()" class="chat-icon-btn" title="Голосовое сообщение">
+      <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 3a4 4 0 014 4v4a4 4 0 01-8 0V7a4 4 0 014-4z"/></svg>
+    </button>
     <button onclick="sendChatMsg()" class="chat-icon-btn" title="Отправить" style="background:rgba(103,232,249,.12);border-color:rgba(103,232,249,.3);color:var(--cyan)">
       <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
     </button>
@@ -2006,7 +2010,19 @@ function appendChatMsg(msg, animate = true) {
   const pfx = prefixMap[msg.author] ? renderPfxBadge(prefixMap[msg.author], prefixColorMap[msg.author], prefixStyleMap[msg.author] || 'solid') : '';
 
   let mediaHtml = '';
-  if (msg.file_url) {
+  if (msg.voice_url) {
+    const dur = msg.voice_duration || 0;
+    const durStr = dur >= 60 ? Math.floor(dur/60)+':'+String(dur%60).padStart(2,'0') : '0:'+String(dur).padStart(2,'0');
+    const bars = Array.from({length:20}, (_,i) => `<span style="height:${6+Math.sin(i*0.8+1)*10+Math.random()*6}px"></span>`).join('');
+    const vid = 'vp-'+msg.id;
+    mediaHtml = `<div class="voice-bubble" style="background:rgba(103,232,249,.06);border:1px solid rgba(103,232,249,.15);margin-top:4px">
+      <button class="voice-play" id="${vid}-btn" onclick="playVoiceMsg('${vid}','${esc(msg.voice_url)}',this)">
+        <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <div class="voice-waveform" id="${vid}-wave">${bars}</div>
+      <span class="voice-dur" id="${vid}-dur">${durStr}</span>
+    </div>`;
+  } else if (msg.file_url) {
     const isImg = msg.file_type === 'image' || /\.(jpg|jpeg|png|gif|webp|svg)/i.test(msg.file_url);
     if (isImg) {
       mediaHtml = `<div style="margin-top:5px"><img src="${esc(msg.file_url)}" class="chat-img-preview" onclick="window.open('${esc(msg.file_url)}','_blank')"></div>`;
@@ -2137,6 +2153,186 @@ function copyText(t){navigator.clipboard.writeText(t).then(()=>showToast('Ско
 if (typeof socket !== 'undefined' && socket) {
   socket.on('chat_message', msg => appendChatMsg(msg, true));
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  VOICE RECORDING
+// ══════════════════════════════════════════════════════════════════════════════
+let mediaRecorder = null;
+let recChunks = [];
+let recTimerInterval = null;
+let recSeconds = 0;
+let isRecording = false;
+let currentVoiceAudio = null;
+let currentVoiceId = null;
+
+async function toggleVoiceRecord() {
+  if (isRecording) {
+    stopVoiceRecord();
+  } else {
+    await startVoiceRecord();
+  }
+}
+
+async function startVoiceRecord() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recChunks = [];
+    recSeconds = 0;
+
+    const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? { mimeType: 'audio/webm;codecs=opus' }
+      : MediaRecorder.isTypeSupported('audio/webm')
+      ? { mimeType: 'audio/webm' }
+      : {};
+
+    mediaRecorder = new MediaRecorder(stream, options);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      sendVoiceMessage();
+    };
+    mediaRecorder.start(100);
+    isRecording = true;
+
+    const micBtn = document.getElementById('chatMicBtn');
+    if (micBtn) micBtn.classList.add('recording');
+    const inp = document.getElementById('chatInput');
+    if (inp) { inp.placeholder = '● Запись...'; inp.disabled = true; }
+
+    const timer = document.getElementById('chatRecTimer');
+    if (timer) timer.classList.remove('hidden');
+
+    recTimerInterval = setInterval(() => {
+      recSeconds++;
+      if (timer) timer.textContent = '● ' + formatRecTime(recSeconds);
+      if (recSeconds >= 120) stopVoiceRecord(); // max 2 min
+    }, 1000);
+
+  } catch(e) {
+    showToast('Нет доступа к микрофону', true);
+  }
+}
+
+function stopVoiceRecord() {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  mediaRecorder.stop();
+  isRecording = false;
+  clearInterval(recTimerInterval);
+
+  const micBtn = document.getElementById('chatMicBtn');
+  if (micBtn) micBtn.classList.remove('recording');
+  const inp = document.getElementById('chatInput');
+  if (inp) { inp.placeholder = 'Сообщение...'; inp.disabled = false; }
+  const timer = document.getElementById('chatRecTimer');
+  if (timer) { timer.classList.add('hidden'); timer.textContent = ''; }
+}
+
+function formatRecTime(s) {
+  const m = Math.floor(s/60);
+  return m + ':' + String(s%60).padStart(2,'0');
+}
+
+async function sendVoiceMessage() {
+  if (!recChunks.length) return;
+  const mimeType = recChunks[0].type || 'audio/webm';
+  const blob = new Blob(recChunks, { type: mimeType });
+  const duration = recSeconds;
+  recChunks = [];
+
+  if (blob.size < 500) return; // too short
+
+  try {
+    showToast('Отправляю голосовое...');
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result.split(',')[1];
+      const result = await uploadFile(base64, mimeType);
+      const msgData = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2,5),
+        text: '',
+        voice_url: result.url,
+        voice_duration: duration,
+      };
+      await api('POST', '/api/chat', msgData);
+    };
+    reader.readAsDataURL(blob);
+  } catch(e) {
+    showToast('Ошибка отправки голосового: ' + e.message, true);
+  }
+}
+
+// Voice playback
+function playVoiceMsg(vid, url, btn) {
+  // Stop current if playing different
+  if (currentVoiceAudio && currentVoiceId !== vid) {
+    currentVoiceAudio.pause();
+    currentVoiceAudio = null;
+    // reset previous button
+    const prevBtn = document.getElementById(currentVoiceId + '-btn');
+    if (prevBtn) prevBtn.innerHTML = '<svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    const prevWave = document.getElementById(currentVoiceId + '-wave');
+    if (prevWave) prevWave.querySelectorAll('span').forEach(s => s.classList.remove('active'));
+    currentVoiceId = null;
+  }
+
+  if (currentVoiceAudio && currentVoiceId === vid) {
+    // Toggle pause/play
+    if (currentVoiceAudio.paused) {
+      currentVoiceAudio.play();
+      btn.innerHTML = '<svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+      animateVoiceWave(vid);
+    } else {
+      currentVoiceAudio.pause();
+      btn.innerHTML = '<svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    }
+    return;
+  }
+
+  // Create new audio
+  const audio = new Audio(url);
+  currentVoiceAudio = audio;
+  currentVoiceId = vid;
+
+  btn.innerHTML = '<svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+
+  audio.play().catch(e => showToast('Ошибка воспроизведения', true));
+  animateVoiceWave(vid);
+
+  // Update timer
+  const durEl = document.getElementById(vid + '-dur');
+  audio.ontimeupdate = () => {
+    if (!durEl) return;
+    const rem = Math.max(0, Math.floor(audio.duration - audio.currentTime));
+    durEl.textContent = '0:' + String(rem).padStart(2,'0');
+  };
+
+  audio.onended = () => {
+    btn.innerHTML = '<svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    const wave = document.getElementById(vid + '-wave');
+    if (wave) wave.querySelectorAll('span').forEach(s => s.classList.remove('active'));
+    currentVoiceAudio = null;
+    currentVoiceId = null;
+    // Reset duration display
+    if (durEl) durEl.textContent = '0:00';
+  };
+}
+
+function animateVoiceWave(vid) {
+  const wave = document.getElementById(vid + '-wave');
+  if (!wave) return;
+  const spans = wave.querySelectorAll('span');
+  let i = 0;
+  const interval = setInterval(() => {
+    if (!currentVoiceAudio || currentVoiceAudio.paused || currentVoiceId !== vid) {
+      spans.forEach(s => s.classList.remove('active'));
+      clearInterval(interval);
+      return;
+    }
+    spans.forEach((s, idx) => s.classList.toggle('active', idx === i % spans.length));
+    i++;
+  }, 120);
+}
+
 
 init();
 loadChatHistory();
